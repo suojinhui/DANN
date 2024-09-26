@@ -1,5 +1,4 @@
 import os
-import time
 import torch.backends.cudnn as cudnn
 import torch.utils.data
 from torchvision import transforms
@@ -103,3 +102,5 @@ def test(dataset_name, epoch, model_root):
             log_file.write('epoch: {}, accuracy of the {} dataset: {}\n'.format(epoch, dataset_name, accu))
 
     print('epoch: {}, accuracy of the {} dataset: {}'.format(epoch, dataset_name, accu))
+    
+    return accu

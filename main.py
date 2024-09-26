@@ -8,6 +8,7 @@ from dataset.data_loader import GetLoader
 from torchvision import datasets
 from torchvision import transforms
 from models.model import CNNModel
+import matplotlib.pyplot as plt
 import numpy as np
 from test import test
 
@@ -29,6 +30,15 @@ lr = 1e-3
 batch_size = 128
 image_size = 28
 n_epoch = 50
+
+# 记录损失值变化
+loss_history = {
+    'loss_s_label': [],
+    'loss_s_domain': [],
+    'loss_t_domain': [],
+    'acc_source': [],
+    'acc_target': []
+}
 
 manual_seed = random.randint(1, 10000)
 random.seed(manual_seed)
@@ -131,8 +141,10 @@ for epoch in range(n_epoch):
         class_label.resize_as_(s_label).copy_(s_label)
 
         class_output, domain_output = my_net(input_data=input_img, alpha=alpha)
-        err_s_label = loss_class(class_output, class_label)
-        err_s_domain = loss_domain(domain_output, domain_label)
+        loss_s_label = loss_class(class_output, class_label)
+        loss_history['loss_s_label'].append(loss_s_label.cpu().data.numpy())
+        loss_s_domain = loss_domain(domain_output, domain_label)
+        loss_history['loss_s_domain'].append(loss_s_domain.cpu().data.numpy())
 
         # training model using target data
         data_target = data_target_iter.next()
@@ -152,33 +164,57 @@ for epoch in range(n_epoch):
         input_img.resize_as_(t_img).copy_(t_img)
 
         _, domain_output = my_net(input_data=input_img, alpha=alpha)
-        err_t_domain = loss_domain(domain_output, domain_label)
-        err = err_s_label  + err_t_domain + err_s_domain
-        err.backward()
+        loss_t_domain = loss_domain(domain_output, domain_label)
+        loss_history['loss_t_domain'].append(loss_t_domain.cpu().data.numpy())
+        loss = loss_s_label  + loss_t_domain + loss_s_domain
+        loss.backward()
         optimizer.step()
 
         i += 1
         if i % 100 == 0:
             if domain_output is not None:
                 with open(log_file_path, 'a') as log_file:  # 'a'模式表示追加内容
-                    log_file.write('epoch: {}, [iter: {} / all {}], err_s_label: {}, err_s_domain: {}, err_t_domain: {}\n'.format(
+                    log_file.write('epoch: {}, [iter: {} / all {}], loss_s_label: {}, loss_s_domain: {}, loss_t_domain: {}\n'.format(
                         epoch, i, len_dataloader, 
-                        err_s_label.cpu().data.numpy(), err_s_domain.cpu().data.numpy(), err_t_domain.cpu().data.numpy()))
+                        loss_s_label.cpu().data.numpy(), loss_s_domain.cpu().data.numpy(), loss_t_domain.cpu().data.numpy()))
 
-                print('epoch: {}, [iter: {} / all {}], err_s_label: {}, err_s_domain: {}, err_t_domain: {}'.format(epoch, i, len_dataloader, 
-                                                        err_s_label.cpu().data.numpy(), err_s_domain.cpu().data.numpy(), err_t_domain.cpu().data.numpy()))
+                print('epoch: {}, [iter: {} / all {}], loss_s_label: {}, loss_s_domain: {}, loss_t_domain: {}'.format(epoch, i, len_dataloader, 
+                                                        loss_s_label.cpu().data.numpy(), loss_s_domain.cpu().data.numpy(), loss_t_domain.cpu().data.numpy()))
             else:
                 with open(log_file_path, 'a') as log_file:  # 'a'模式表示追加内容
-                    log_file.write('epoch: {}, [iter: {} / all {}], err_s_label: {}\n'.format(
+                    log_file.write('epoch: {}, [iter: {} / all {}], loss_s_label: {}\n'.format(
                         epoch, i, len_dataloader, 
-                        err_s_label.cpu().data.numpy()))
+                        loss_s_label.cpu().data.numpy()))
 
-                print('epoch: {}, [iter: {} / all {}], err_s_label: {}'.format(epoch, i, len_dataloader, 
-                                                        err_s_label.cpu().data.numpy()))
+                print('epoch: {}, [iter: {} / all {}], loss_s_label: {}'.format(epoch, i, len_dataloader, 
+                                                        loss_s_label.cpu().data.numpy()))
 
 
     torch.save(my_net, '{0}/mnist_mnistm_model_epoch.pth'.format(model_root))
-    test(source_dataset_name, epoch, model_root)
-    test(target_dataset_name, epoch, model_root)
+    acc_source = test(source_dataset_name, epoch, model_root)
+    loss_history['acc_source'].append(acc_source)
+    acc_target = test(target_dataset_name, epoch, model_root)
+    loss_history['acc_target'].append(acc_target)
+    
+plt.figure(figsize=(10, 5))
+plt.plot(loss_history['loss_s_label'], label='loss_s_label')
+if loss_history['loss_s_domain']:
+    plt.plot(loss_history['loss_s_domain'], label='loss_s_domain')
+if loss_history['loss_t_domain']:
+    plt.plot(loss_history['loss_t_domain'], label='loss_t_domain')
+plt.xlabel('Iterations')
+plt.ylabel('Loss')
+plt.legend()
+plt.title('Loss during Training')
+plt.savefig('{0}/loss_curve.png'.format(model_root))
+
+plt.figure(figsize=(10, 5))
+plt.plot(loss_history['acc_source'], label='acc_source')
+plt.plot(loss_history['acc_target'], label='acc_target')
+plt.xlabel('epochs')
+plt.ylabel('accuracy')
+plt.legend()
+plt.title('Accuracy during Training')
+plt.savefig('{0}/acc_curve.png'.format(model_root))
 
 print('done')
