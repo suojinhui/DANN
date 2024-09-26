@@ -1,10 +1,5 @@
 ## This is a pytorch implementation of the paper *[Unsupervised Domain Adaptation by Backpropagation](http://sites.skoltech.ru/compvision/projects/grl/)*
 
-
-#### Environment
-- Pytorch 1.0
-- Python 2.7
-
 #### Network Structure
 
 
@@ -19,14 +14,10 @@ cd dataset
 tar -zvxf mnist_m.tar.gz
 ```
 
-#### Training
-
-Then, run `main.py`
-
-python 3 and docker version please go to [DANN_py3](https://github.com/fungtion/DANN_py3) 
-
 #### Training(suojinhui) 
 
 ```
-CUDA_VISIBLE_DEVICES=1 python main.py
+CUDA_VISIBLE_DEVICES=1 python main.py # CUDA_VISIBLE_DEVICES=1 用于指定GPU编号，可选，不指定则默认使用0号GPU
 ```
+### Change Log
+2024-09-26（索锦辉）: 重整代码，增加注释，增加可视化，增加训练参数，增加训练日志，重写梯度反转层。
