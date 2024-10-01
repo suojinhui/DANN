@@ -21,3 +21,4 @@ CUDA_VISIBLE_DEVICES=1 python main.py # CUDA_VISIBLE_DEVICES=1 用于指定GPU�
 ```
 ### Change Log
 2024-09-26（索锦辉）: 重整代码，增加注释，增加可视化，增加训练参数，增加训练日志，重写梯度反转层。
+2024-09-26（索锦辉）: 合并test.py和main.py，简化训练流。

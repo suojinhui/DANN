@@ -232,9 +232,9 @@ def main():
             domain_label = domain_label.to(device)
 
             _, domain_output = my_net(input_data=t_img, alpha=alpha)
-            loss_t_domain = loss_domain(domain_output, domain_label)
+            loss_t_domain = loss_domain(domain_output, domain_label) # torch.tensor(0.0).to(device)
             loss_history['loss_t_domain'].append(loss_t_domain.cpu().data.numpy())
-            loss = loss_s_label  + loss_t_domain + loss_s_domain
+            loss = loss_s_label + loss_s_domain + loss_t_domain
             
             loss.backward()
             optimizer.step()
