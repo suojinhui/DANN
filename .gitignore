@@ -106,3 +106,4 @@ dataset/MNIST/
 dataset/mnist_m/
 .png
 dataset/mnist_m.tar.gz
+.vscode/
