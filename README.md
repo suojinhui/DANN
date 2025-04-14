@@ -20,5 +20,5 @@ tar -zvxf mnist_m.tar.gz
 CUDA_VISIBLE_DEVICES=1 python main.py # CUDA_VISIBLE_DEVICES=1 用于指定GPU编号，可选，不指定则默认使用0号GPU
 ```
 ### Change Log
-2024-09-26（索锦辉）: 重整代码，增加注释，增加可视化，增加训练参数，增加训练日志，重写梯度反转层。
-2024-09-26（索锦辉）: 合并test.py和main.py，简化训练流。
+- 2024-09-26: 重整代码，增加注释，增加可视化，增加训练参数，增加训练日志，重写梯度反转层。
+- 2024-09-26: 合并test.py和main.py，简化训练流。
