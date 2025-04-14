@@ -33,7 +33,7 @@ python main.py --help
 - Train using the run.sh script (some parameters are already specified)
 
 ```bash
-CUDA_VISIBLE_DEVICES=1 run.sh --data_root ./dataset --model_dir ./runs
+CUDA_VISIBLE_DEVICES=1 sh run.sh --data_root ./dataset --model_dir ./runs
 ```
 
 ### Change Log
