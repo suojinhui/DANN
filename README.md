@@ -1,3 +1,5 @@
+# DANN-amp
+
 ## This is a pytorch implementation of the paper *[Unsupervised Domain Adaptation by Backpropagation](http://sites.skoltech.ru/compvision/projects/grl/)*
 
 #### Network Structure
@@ -9,16 +11,32 @@
 
 First, you need download the target dataset mnist_m from [pan.baidu.com](https://pan.baidu.com/s/1pXaMkVsQf_yUT51SeYh27g) fetch code: kjan or [Google Drive](https://drive.google.com/open?id=0B_tExHiYS-0veklUZHFYT19KYjg)
 
-```
+```bash
 cd dataset
 tar -zvxf mnist_m.tar.gz
 ```
 
 #### Training(suojinhui) 
 
+- Specify GPU for training
+
+```bash
+CUDA_VISIBLE_DEVICES=1 python main.py
 ```
-CUDA_VISIBLE_DEVICES=1 python main.py # CUDA_VISIBLE_DEVICES=1 用于指定GPU编号，可选，不指定则默认使用0号GPU
+
+- View optional parameters
+
+```bash
+python main.py --help 
 ```
+
+- Train using the run.sh script (some parameters are already specified)
+
+```bash
+CUDA_VISIBLE_DEVICES=1 run.sh --data_root ./dataset --model_dir ./runs
+```
+
 ### Change Log
-- 2024-09-26: 重整代码，增加注释，增加可视化，增加训练参数，增加训练日志，重写梯度反转层。
-- 2024-09-26: 合并test.py和main.py，简化训练流。
+- 2024-09-26: Refactor the code, add comments, add visualization, add training parameters, add training logs, rewrite the gradient reversal layer.
+- 2024-09-26: Merge test.py and main.py, simplify the training flow.
+- 2025-04-15: Add amp mixed precision training, optimize the training flow, use parameter table for passing parameters.

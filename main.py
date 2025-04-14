@@ -1,3 +1,4 @@
+import argparse
 import random
 import os
 import time
@@ -10,78 +11,81 @@ from torchvision import transforms
 from models.model import CNNModel
 import matplotlib.pyplot as plt
 import numpy as np
+from tqdm import tqdm
 
 @torch.no_grad()
 def test(my_net, dataloader, dataset_name, epoch, model_root, device):
-    """
-    用于测试模型的准确率
-    """
-    log_file_path = '{0}/training_log.txt'.format(model_root)
-
-    """ validation """
-
-    my_net = my_net.eval()
-
-    len_dataloader = len(dataloader)
-    data_target_iter = iter(dataloader)
-
-    i = 0
-    n_total = 0
-    n_correct = 0
-
-    while i < len_dataloader:
-
-        # 开始测试
-        data_target = next(data_target_iter)
-        t_img, t_label = data_target
-        
+    """测试模型准确率"""
+    log_file_path = os.path.join(model_root, 'training_log.txt')
+    my_net.eval()
+    
+    total_correct = 0
+    total_samples = 0
+    
+    for t_img, t_label in dataloader:
         t_img = t_img.to(device)
         t_label = t_label.to(device)
-
-        class_output, _ = my_net(input_data=t_img, alpha=0)
-        pred = class_output.data.max(1, keepdim=True)[1]
-        n_correct += pred.eq(t_label.data.view_as(pred)).cpu().sum()
-        n_total += len(t_label)
-        i += 1
-
-    accu = n_correct.data.numpy() * 1.0 / n_total
-    with open(log_file_path, 'a') as log_file:  # 'a'模式表示追加内容
-            log_file.write('epoch: {}, accuracy of the {} dataset: {}\n'.format(epoch, dataset_name, accu))
-
-    print('epoch: {}, accuracy of the {} dataset: {}'.format(epoch, dataset_name, accu))
+        
+        class_output, _ = my_net(t_img, alpha=0)
+        pred = class_output.argmax(dim=1, keepdim=True)
+        total_correct += pred.eq(t_label.view_as(pred)).sum().item()
+        total_samples += len(t_label)
     
-    return accu
-
+    accuracy = total_correct / total_samples
+    with open(log_file_path, 'a') as f:
+        f.write(f'epoch: {epoch}, {dataset_name} accuracy: {accuracy:.4f}\n')
+    
+    print(f'epoch: {epoch}, {dataset_name} accuracy: {accuracy:.4f}')
+    return accuracy
 
 def main():
-    """
-    训练脚本
-    """
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='Domain adaptation training script')
+    parser.add_argument('--target_dataset', type=str, default='mnist_m', 
+                      help='Name of the target dataset (default: mnist_m)')
+    parser.add_argument('--data_root', type=str, default='./dataset',
+                      help='Root directory of the dataset (default: ./dataset)')
+    parser.add_argument('--model_dir', type=str, default='./runs',
+                      help='Directory to save the model (default: ./runs)')
+    parser.add_argument('--lr', type=float, default=1e-3,
+                      help='Learning rate (default: 0.001)')
+    parser.add_argument('--batch_size', type=int, default=128,
+                      help='Batch size (default: 128)')
+    parser.add_argument('--image_size', type=int, default=28,
+                      help='Input image size (default: 28)')
+    parser.add_argument('--epochs', type=int, default=50,
+                      help='Number of training epochs (default: 50)')
+    parser.add_argument('--seed', type=int, default=None,
+                      help='Random seed (default: random)')
+    parser.add_argument('--num_workers', type=int, default=4,
+                      help='Number of data loading threads (default: 4)')
+    parser.add_argument('--amp', action='store_true',
+                      help='Enable mixed precision training')
+    parser.add_argument('--no_timestamp', action='store_true',
+                      help='Do not add a timestamp to the model directory')
 
-    # 数据集信息设置
-    target_dataset_name = 'mnist_m'
-    target_image_root = os.path.join('.', 'dataset', target_dataset_name)
+    args = parser.parse_args()
 
-    # 创建保存模型的目录
-    model_root = os.path.join('./', 'runs/', 'run_' + str(int(time.time())))
-    if not os.path.exists(model_root):# 加时间戳防止重名
-        os.makedirs(model_root)
-        
-    # 创建一个文件用于保存训练中的日志    
-    log_file_path = '{0}/training_log.txt'.format(model_root)
-
-    # 超参数设置
-    cudnn.benchmark = True
-    lr = 1e-3
-    batch_size = 128
-    image_size = 28
-    n_epoch = 50
-
-    # 指定训练设备
+    # 设备设置
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"device: {device}")
 
-    # 记录损失值变化
-    loss_history = {
+    # 随机种子设置
+    if args.seed is not None:
+        random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        cudnn.deterministic = True
+        cudnn.benchmark = False
+    else:
+        cudnn.benchmark = True
+
+    # 创建模型目录
+    timestamp = '' if args.no_timestamp else f'_{int(time.time())}'
+    model_root = os.path.join(args.model_dir, f'run{timestamp}')
+    os.makedirs(model_root, exist_ok=True)
+
+    # 初始化数据结构
+    metrics = {
         'loss_s_label': [],
         'loss_s_domain': [],
         'loss_t_domain': [],
@@ -89,200 +93,154 @@ def main():
         'acc_target': []
     }
 
-    # 训练随机种子设置
-    manual_seed = random.randint(1, 10000)
-    random.seed(manual_seed)
-    torch.manual_seed(manual_seed)
-
-    # 数据预处理定义
-    img_transform_source = transforms.Compose([
-        transforms.Resize(image_size),
+    # 数据预处理
+    source_transform = transforms.Compose([
+        transforms.Resize(args.image_size),
         transforms.ToTensor(),
         transforms.Normalize(mean=(0.1307,), std=(0.3081,))
     ])
 
-    img_transform_target = transforms.Compose([
-        transforms.Resize(image_size),
+    target_transform = transforms.Compose([
+        transforms.Resize(args.image_size),
         transforms.ToTensor(),
         transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
     ])
 
-    # 源域训练数据集
-    dataset_source = datasets.MNIST(
-        root='./dataset',
-        train=True,
-        transform=img_transform_source,
-        download=True
-    )
-
-    dataloader_source = torch.utils.data.DataLoader(
-        dataset=dataset_source,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=8)
-
-    # 目标域训练数据集
-    train_list = os.path.join(target_image_root, 'mnist_m_train_labels.txt')
-
-    dataset_target = GetLoader(
-        data_root=os.path.join(target_image_root, 'mnist_m_train'),
-        data_list=train_list,
-        transform=img_transform_target
-    )
-
-    dataloader_target = torch.utils.data.DataLoader(
-        dataset=dataset_target,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=8)
-
-    # 源域测试数据集
-    dataset_source_test = datasets.MNIST(
-                root='./dataset',
-                train=False,
-                transform=img_transform_source,
-            )
-
-    dataloader_source_test = torch.utils.data.DataLoader(
-            dataset=dataset_source_test,
-            batch_size=batch_size,
-            shuffle=False,
-            num_workers=8
+    # 数据加载
+    def load_data():
+        # 源域数据
+        source_train = datasets.MNIST(
+            root=args.data_root,
+            train=True,
+            transform=source_transform,
+            download=True
+        )
+        source_test = datasets.MNIST(
+            root=args.data_root,
+            train=False,
+            transform=source_transform
         )
 
-    # 目标域测试数据集
-    test_list = os.path.join(target_image_root, 'mnist_m_test_labels.txt')
-
-    dataset_target_test = GetLoader(
-        data_root=os.path.join(target_image_root, 'mnist_m_test'),
-        data_list=test_list,
-        transform=img_transform_target
-    )
-
-    dataloader_target_test = torch.utils.data.DataLoader(
-            dataset=dataset_target_test,
-            batch_size=batch_size,
-            shuffle=False,
-            num_workers=8
+        # 目标域数据
+        target_path = os.path.join(args.data_root, args.target_dataset)
+        target_train = GetLoader(
+            data_root=os.path.join(target_path, 'mnist_m_train'),
+            data_list=os.path.join(target_path, 'mnist_m_train_labels.txt'),
+            transform=target_transform
+        )
+        target_test = GetLoader(
+            data_root=os.path.join(target_path, 'mnist_m_test'),
+            data_list=os.path.join(target_path, 'mnist_m_test_labels.txt'),
+            transform=target_transform
         )
 
-    # 创建模型
-    my_net = CNNModel()
-    
-    # 设置模型参数为可训练
-    for p in my_net.parameters():
-        p.requires_grad = True
+        return (
+            torch.utils.data.DataLoader(source_train, args.batch_size, shuffle=True, 
+                                      num_workers=args.num_workers),
+            torch.utils.data.DataLoader(target_train, args.batch_size, shuffle=True,
+                                      num_workers=args.num_workers),
+            torch.utils.data.DataLoader(source_test, args.batch_size, shuffle=False,
+                                      num_workers=args.num_workers),
+            torch.utils.data.DataLoader(target_test, args.batch_size, shuffle=False,
+                                      num_workers=args.num_workers)
+        )
 
-    # 设置优化器
-    optimizer = optim.Adam(my_net.parameters(), lr=lr)
+    train_source, train_target, test_source, test_target = load_data()
 
-    # 定义损失函数
-    loss_class = torch.nn.NLLLoss() # 这里损失函数是作为一个nn.Module的子类，所以下面要指定设备，即使里面没有任何参数
-    loss_domain = torch.nn.NLLLoss()
+    # 模型初始化
+    model = CNNModel().to(device)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    criterion = torch.nn.NLLLoss().to(device)
+    scaler = torch.amp.GradScaler("cuda", enabled=args.amp)
 
-    # 移动到GPU上
-    my_net = my_net.to(device)
-    loss_class = loss_class.to(device)
-    loss_domain = loss_domain.to(device)
+    best_acc = 0
 
-    # 循环训练
-    for epoch in range(n_epoch):
-        my_net.train()
-        len_dataloader = min(len(dataloader_source), len(dataloader_target))
-        data_source_iter = iter(dataloader_source)
-        data_target_iter = iter(dataloader_target)
+    # 训练循环
+    for epoch in range(args.epochs):
+        model.train()
+        start_time = time.time()
 
-        i = 0
-        while i < len_dataloader:
-
-            # 计算一个梯度反转因子，随着训练的进行逐渐减小
-            p = float(i + epoch * len_dataloader) / n_epoch / len_dataloader
+        pbar = tqdm(zip(train_source, train_target), 
+                total=min(len(train_source), len(train_target)),
+                desc=f'Epoch {epoch+1}/{args.epochs}',
+                ncols=100,  # 进度条宽度
+                bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]')
+        
+        for batch_idx, ((src_imgs, src_labels), (tgt_imgs, _)) in enumerate(pbar):
+            # 数据准备
+            src_imgs = src_imgs.to(device)
+            src_labels = src_labels.to(device)
+            tgt_imgs = tgt_imgs.to(device)
+            
+            # 动态alpha计算
+            p = (epoch + 1) / args.epochs
             alpha = 2. / (1. + np.exp(-10 * p)) - 1
 
-            # 使用源域数据训练
-            data_source = next(data_source_iter)
-            s_img, s_label = data_source
-            
+            # 混合精度训练上下文
+            with torch.amp.autocast("cuda", enabled=args.amp):
+                # 源域处理
+                class_out, domain_out = model(src_imgs, alpha)
+                loss_class = criterion(class_out, src_labels)
+                loss_domain_src = criterion(domain_out, torch.zeros(len(src_imgs)).long().to(device))
+
+                # 目标域处理
+                _, domain_out = model(tgt_imgs, alpha)
+                loss_domain_tgt = criterion(domain_out, torch.ones(len(tgt_imgs)).long().to(device))
+
+                # 总损失
+                total_loss = loss_class + loss_domain_src + loss_domain_tgt
+
+            # 反向传播
             optimizer.zero_grad()
-            batch_size = len(s_label)
-            
-            domain_label = torch.zeros(batch_size)
-            domain_label = domain_label.long()
+            scaler.scale(total_loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
 
-            s_img = s_img.to(device)
-            s_label = s_label.to(device)
-            domain_label = domain_label.to(device)
+            # 记录指标
+            metrics['loss_s_label'].append(loss_class.item())
+            metrics['loss_s_domain'].append(loss_domain_src.item())
+            metrics['loss_t_domain'].append(loss_domain_tgt.item())
 
-            class_output, domain_output = my_net(input_data=s_img, alpha=alpha)
-            loss_s_label = loss_class(class_output, s_label)
-            loss_history['loss_s_label'].append(loss_s_label.cpu().data.numpy())
-            loss_s_domain = loss_domain(domain_output, domain_label)
-            loss_history['loss_s_domain'].append(loss_s_domain.cpu().data.numpy())
+        # 验证和保存
+        epoch_time = time.time() - start_time
+        metrics['acc_source'].append(test(model, test_source, "source", epoch, model_root, device))
+        metrics['acc_target'].append(test(model, test_target, "target", epoch, model_root, device))
+        
+        if metrics['acc_target'][-1] > best_acc:
+            best_acc = metrics['acc_target'][-1]
+            # 保存检查点
+            checkpoint = {
+                'epoch': epoch,
+                'model_state': model.state_dict(),
+                'optimizer_state': optimizer.state_dict(),
+                'metrics': metrics
+            }
+            torch.save(checkpoint, os.path.join(model_root, f'model_best.pth'))
+        
+        print(f'Epoch {epoch} complete, time: {epoch_time:.2f}s')
 
-            # 使用目标域数据训练
-            data_target = next(data_target_iter)
-            t_img, t_label = data_target
-            
-            batch_size = len(t_label)
-
-            domain_label = torch.ones(batch_size)
-            domain_label = domain_label.long()
-            
-            t_img = t_img.to(device)
-            domain_label = domain_label.to(device)
-
-            _, domain_output = my_net(input_data=t_img, alpha=alpha)
-            loss_t_domain = loss_domain(domain_output, domain_label) # torch.tensor(0.0).to(device)
-            loss_history['loss_t_domain'].append(loss_t_domain.cpu().data.numpy())
-            loss = loss_s_label + loss_s_domain + loss_t_domain
-            
-            loss.backward()
-            optimizer.step()
-
-            i += 1
-            if i % 100 == 0:
-                with open(log_file_path, 'a') as log_file:  # 'a'模式表示追加内容
-                    log_file.write('epoch: {}, [iter: {} / all {}], loss_s_label: {}, loss_s_domain: {}, loss_t_domain: {}\n'.format(
-                        epoch, i, len_dataloader, 
-                        loss_s_label.cpu().data.numpy(), loss_s_domain.cpu().data.numpy(), loss_t_domain.cpu().data.numpy()))
-
-                print('epoch: {}, [iter: {} / all {}], loss_s_label: {}, loss_s_domain: {}, loss_t_domain: {}'.format(epoch, i, len_dataloader, 
-                                                        loss_s_label.cpu().data.numpy(), loss_s_domain.cpu().data.numpy(), loss_t_domain.cpu().data.numpy()))
-
-        # 保存模型
-        torch.save(my_net, '{0}/mnist_mnistm_model_epoch.pth'.format(model_root))
-        # 开始验证
-        acc_source = test(my_net, dataloader_source_test, "minist", epoch, model_root, device)
-        loss_history['acc_source'].append(acc_source)
-        acc_target = test(my_net, dataloader_target_test, "minist_m", epoch, model_root, device)
-        loss_history['acc_target'].append(acc_target)
-
-    # 开始绘图    
-    plt.figure(figsize=(10, 5))
-    plt.plot(loss_history['loss_s_label'], label='loss_s_label')
-    if loss_history['loss_s_domain']:
-        plt.plot(loss_history['loss_s_domain'], label='loss_s_domain')
-    if loss_history['loss_t_domain']:
-        plt.plot(loss_history['loss_t_domain'], label='loss_t_domain')
-    plt.xlabel('Iterations')
-    plt.ylabel('Loss')
+    # 结果可视化
+    plt.figure(figsize=(15, 5))
+    
+    plt.subplot(1, 2, 1)
+    plt.plot(metrics['loss_s_label'], label='classification loss')
+    plt.plot(metrics['loss_s_domain'], label='source domain loss')
+    plt.plot(metrics['loss_t_domain'], label='target domain loss')
+    plt.xlabel('iterations')
+    plt.ylabel('loss')
     plt.legend()
-    plt.title('Loss during Training')
-    plt.savefig('{0}/loss_curve.png'.format(model_root))
 
-    plt.figure(figsize=(10, 5))
-    plt.plot(loss_history['acc_source'], label='acc_source')
-    plt.plot(loss_history['acc_target'], label='acc_target')
+    plt.subplot(1, 2, 2)
+    plt.plot(metrics['acc_source'], label='source accuracy')
+    plt.plot(metrics['acc_target'], label='target accuracy')
     plt.xlabel('epochs')
     plt.ylabel('accuracy')
     plt.legend()
-    plt.title('Accuracy during Training')
-    plt.savefig('{0}/acc_curve.png'.format(model_root))
 
-    print('done')
-    
+    plt.savefig(os.path.join(model_root, 'training_metrics.png'))
+    plt.close()
+
 if __name__ == '__main__':
-    start_time = time.time()
+    start = time.time()
     main()
-    end_time = time.time()
-    print('Running time: %s Seconds'%(end_time-start_time))
+    print(f'total time: {time.time()-start:.2f} seconds')
