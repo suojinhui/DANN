@@ -33,10 +33,11 @@ python main.py --help
 - Train using the run.sh script (some parameters are already specified)
 
 ```bash
-CUDA_VISIBLE_DEVICES=1 sh run.sh --data_root ./dataset --model_dir ./runs
+CUDA_VISIBLE_DEVICES=1 sh run.sh --data_root ./dataset --model_dir ./runs --amp --sgd
 ```
 
 ### Change Log
 - 2024-09-26: Refactor the code, add comments, add visualization, add training parameters, add training logs, rewrite the gradient reversal layer.
 - 2024-09-26: Merge test.py and main.py, simplify the training flow.
 - 2025-04-15: Add amp mixed precision training, optimize the training flow, use parameter table for passing parameters.
+- 2025-04-16: Add SGD optimizer for better training results, enabled through --sgd.

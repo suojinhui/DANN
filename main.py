@@ -63,6 +63,8 @@ def main():
                       help='Enable mixed precision training')
     parser.add_argument('--no_timestamp', action='store_true',
                       help='Do not add a timestamp to the model directory')
+    parser.add_argument('--sgd', action='store_true',
+                      help='Using SGD optimizer')
 
     args = parser.parse_args()
 
@@ -149,7 +151,10 @@ def main():
 
     # 模型初始化
     model = CNNModel().to(device)
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    if args.sgd:
+        optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
+    else:
+        optimizer = optim.Adam(model.parameters(), lr=args.lr)
     criterion = torch.nn.NLLLoss().to(device)
     scaler = torch.amp.GradScaler("cuda", enabled=args.amp)
 
