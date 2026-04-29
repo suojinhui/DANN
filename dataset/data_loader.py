@@ -18,8 +18,17 @@ class GetLoader(data.Dataset):
         self.img_labels = []
 
         for data in data_list:
-            self.img_paths.append(data[:-3])
-            self.img_labels.append(data[-2])
+            data = data.strip()
+            if not data:
+                continue
+
+            parts = data.rsplit(maxsplit=1)
+            if len(parts) != 2:
+                raise ValueError(f"Invalid data list entry: '{data}'")
+
+            img_path, img_label = parts
+            self.img_paths.append(img_path)
+            self.img_labels.append(int(img_label))
 
     def __getitem__(self, item):
         img_paths, labels = self.img_paths[item], self.img_labels[item]
@@ -27,7 +36,6 @@ class GetLoader(data.Dataset):
 
         if self.transform is not None:
             imgs = self.transform(imgs)
-            labels = int(labels)
 
         return imgs, labels
 
